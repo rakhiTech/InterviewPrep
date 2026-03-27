@@ -76,6 +76,7 @@ const QuestionSchema = new Schema<IQuestion>({
   timeLimit: Number,
 });
 
+
 const InterviewSchema = new Schema<IInterview>(
   {
     interviewId: {
