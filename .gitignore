@@ -1,0 +1,14 @@
+# InterviewPrepAI
+node_modules/
+dist/
+.next/
+__pycache__/
+*.pyc
+.env
+.env.local
+*.log
+logs/
+.DS_Store
+coverage/
+.venv/
+venv/
