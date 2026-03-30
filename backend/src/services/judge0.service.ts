@@ -168,13 +168,13 @@ try {
         else if (language === 'c') cmd = `gcc "${filepath}" -o "${filepath}.exe" && "${filepath}.exe"`;
         else cmd = `node "${filepath}"`; // fallback
         
-        let execProcess = exec(cmd, { timeout: 10000 }, async (error, stdout, stderr) => {
-          try { await fs.unlink(filepath); } catch(e) {} // cleanup
+        const execProcess = exec(cmd, { timeout: 10000 }, async (error, stdout, stderr) => {
+          try { await fs.unlink(filepath); } catch { /* Ignore cleanup errors */ }
 
           let statusId = 3;
           let statusDesc = 'Accepted';
 
-          let isError = !!error || !!stderr;
+          const isError = !!error || !!stderr;
 
           if (isError) {
             statusId = 11;

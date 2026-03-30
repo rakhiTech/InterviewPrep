@@ -23,9 +23,14 @@ export default function DraggableVideo({ stream, onFaceDetectChange, onDeviceDet
   
   // Detection variables
   const aiModelRef = useRef<cocoSsd.ObjectDetection | null>(null);
-  const personChecksRef = useRef<{ lastSeen: number, isMissing: boolean }>({ lastSeen: Date.now(), isMissing: false });
+  const personChecksRef = useRef<{ lastSeen: number, isMissing: boolean }>({ lastSeen: 0, isMissing: false });
   const deviceChecksRef = useRef<{ isDetected: boolean }>({ isDetected: false });
-  const timeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const timeoutRef = useRef<any | null>(null);
+
+  // Initialize refs that need dynamic values
+  useEffect(() => {
+    personChecksRef.current.lastSeen = Date.now();
+  }, []);
   
   // Set up video stream immediately
   useEffect(() => {

@@ -72,8 +72,8 @@ class AIService {
     let correctness = 0;
     let codeQuality = 0;
     let explanationQuality = 0;
-    let strengths: string[] = [];
-    let improvements: string[] = [];
+    const strengths: string[] = [];
+    const improvements: string[] = [];
     
     // 1. Evaluate Correctness based on Execution Results
     if (params.code) {
