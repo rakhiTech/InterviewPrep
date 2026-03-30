@@ -114,11 +114,11 @@ try {
         let __isLinkedList = false;
         
         const __content = fs.readFileSync(__filename, 'utf8');
-        const __funcMatch = __content.match(/function\\s+([a-zA-Z0-9_]+)\\s*\\(/);
-        const __funcName = __funcMatch ? __funcMatch[1] : null;
+        const __funcMatch = __content.match(/(?:function\\s+|const\\s+|var\\s+|let\\s+)([a-zA-Z0-9_]+)\\s*(?:=|\\s*\\()/);
+        const __funcName = __funcMatch ? (__funcMatch[1] === 'function' ? null : __funcMatch[1]) : null;
 
         if (__funcName) {
-            if (__funcName.toLowerCase().includes('list')) __isLinkedList = true;
+            if (__funcName.toLowerCase().includes('list') || __content.toLowerCase().includes('listnode') || __content.toLowerCase().includes('linked')) __isLinkedList = true;
 
             if (__stdin.includes('=')) {
                 // Parse named variables format: "nums=[2,7], target=9"

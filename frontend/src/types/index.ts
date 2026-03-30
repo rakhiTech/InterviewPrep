@@ -62,6 +62,8 @@ export interface ExecutionResult {
   memory: number;
   testCasesPassed: number;
   totalTestCases: number;
+  input?: string;
+  expectedOutput?: string;
 }
 
 export interface AIEvaluation {
@@ -162,6 +164,8 @@ export interface SubmitAnswerRequest {
 export interface ExecuteCodeRequest {
   sourceCode: string;
   languageId: number;
+  sessionId?: string;
+  questionId?: string;
   stdin?: string;
   expectedOutput?: string;
 }

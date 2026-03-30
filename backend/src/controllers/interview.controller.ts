@@ -381,14 +381,22 @@ export const submitAnswer = async (req: Request, res: Response) => {
             })),
           });
 
+          // Find the first failed test case or use the first one
+          const firstFailedIdx = testResults.results.findIndex(r => r.status.id !== 3);
+          const reportIdx = firstFailedIdx >= 0 ? firstFailedIdx : 0;
+          const reportCase = question.testCases[reportIdx];
+          const reportResult = testResults.results[reportIdx];
+
           executionResult = {
-            stdout: testResults.results[0]?.stdout || '',
-            stderr: testResults.results[0]?.stderr || '',
-            status: testResults.results[0]?.status?.description || 'Unknown',
-            time: testResults.results[0]?.time || '0',
-            memory: testResults.results[0]?.memory || 0,
+            stdout: reportResult?.stdout || '',
+            stderr: reportResult?.stderr || '',
+            status: testResults.passed === testResults.total ? 'Accepted' : (reportResult?.status?.description || 'Unknown'),
+            time: reportResult?.time || '0',
+            memory: reportResult?.memory || 0,
             testCasesPassed: testResults.passed,
             totalTestCases: testResults.total,
+            input: reportCase?.input || '',
+            expectedOutput: reportCase?.expectedOutput || '',
           };
         } else {
           const result = await judge0Service.executeCode({
@@ -403,6 +411,8 @@ export const submitAnswer = async (req: Request, res: Response) => {
             memory: result.memory || 0,
             testCasesPassed: 0,
             totalTestCases: 0,
+            input: '',
+            expectedOutput: '',
           };
         }
       } catch (execError: any) {
@@ -415,6 +425,8 @@ export const submitAnswer = async (req: Request, res: Response) => {
           memory: 0,
           testCasesPassed: 0,
           totalTestCases: 0,
+          input: '',
+          expectedOutput: '',
         };
       }
     }
@@ -615,8 +627,49 @@ export const logProctoringFlag = async (req: Request, res: Response) => {
  */
 export const executeCode = async (req: Request, res: Response) => {
   try {
-    const { sourceCode, languageId, stdin, expectedOutput, timeLimit, memoryLimit } =
+    const { sourceCode, languageId, stdin, expectedOutput, timeLimit, memoryLimit, sessionId, questionId } =
       req.body;
+
+    // If we have questionId, we try to run all its test cases!
+    if (sessionId && questionId) {
+       const session = await CandidateSession.findById(sessionId);
+       if (session) {
+          const interview = await Interview.findOne({ interviewId: session.interviewId });
+          const question = interview?.questions.find(q => q.id === questionId);
+          
+          if (question && question.testCases && question.testCases.length > 0) {
+             const testResults = await judge0Service.runTestCases({
+               sourceCode,
+               languageId,
+               testCases: question.testCases.map((tc) => ({
+                 input: tc.input,
+                 expectedOutput: tc.expectedOutput,
+               })),
+             });
+
+             // Find the first failed test case or use the first one
+             const firstFailedIdx = testResults.results.findIndex(r => r.status.id !== 3);
+             const reportIdx = firstFailedIdx >= 0 ? firstFailedIdx : 0;
+             const reportCase = question.testCases[reportIdx];
+             const reportResult = testResults.results[reportIdx];
+             
+             return res.json({
+               success: true,
+               data: {
+                 stdout: reportResult?.stdout || '',
+                 stderr: reportResult?.stderr || '',
+                 status: testResults.passed === testResults.total ? 'Accepted' : (reportResult?.status?.description || 'Unknown'),
+                 time: reportResult?.time || '0',
+                 memory: reportResult?.memory || 0,
+                 testCasesPassed: testResults.passed,
+                 totalTestCases: testResults.total,
+                 input: reportCase?.input || '',
+                 expectedOutput: reportCase?.expectedOutput || '',
+               }
+             });
+          }
+       }
+    }
 
     const result = await judge0Service.executeCode({
       sourceCode,
@@ -629,7 +682,11 @@ export const executeCode = async (req: Request, res: Response) => {
 
     res.json({
       success: true,
-      data: result,
+      data: {
+         ...result,
+         input: stdin || '',
+         expectedOutput: expectedOutput || ''
+      },
     });
   } catch (error: any) {
     logger.error('Execute code error:', error);

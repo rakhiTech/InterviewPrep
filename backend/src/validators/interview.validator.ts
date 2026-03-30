@@ -81,6 +81,8 @@ export const executeCodeSchema = z.object({
   body: z.object({
     sourceCode: z.string().min(1),
     languageId: z.number().int(),
+    sessionId: z.string().optional(),
+    questionId: z.string().optional(),
     stdin: z.string().optional(),
     expectedOutput: z.string().optional(),
     timeLimit: z.number().optional(),

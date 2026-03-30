@@ -6,10 +6,11 @@ import dynamic from 'next/dynamic';
 import { useInterviewStore } from '@/store';
 import { candidateApi, codeApi, proctoringApi } from '@/lib/api';
 import { getSocket } from '@/lib/socket';
-import { LANGUAGE_MAP } from '@/lib/constants';
+import { LANGUAGE_MAP, BOILERPLATES } from '@/lib/constants';
 import type { ExecutionResult, AIEvaluation } from '@/types';
 import toast from 'react-hot-toast';
 import styles from './session.module.css';
+import DraggableVideo from '@/components/DraggableVideo';
 
 // Dynamic import for Monaco Editor (SSR incompatible)
 const MonacoEditor = dynamic(() => import('@monaco-editor/react'), {
@@ -58,6 +59,9 @@ export default function InterviewSession() {
     percentageScore: number;
     feedback: any;
   } | null>(null);
+  
+  const [personDetected, setPersonDetected] = useState(true);
+  const [deviceDetected, setDeviceDetected] = useState(false);
 
   const [stream, setStream] = useState<MediaStream | null>(null);
   const videoRef = useRef<HTMLVideoElement>(null);
@@ -93,7 +97,7 @@ export default function InterviewSession() {
     } catch {
       toast.error('Failed to start interview');
     }
-  }, [interview, sessionId, startInterview, currentQuestion]);
+  }, [interview, sessionId, startInterview, currentQuestion, hasPermissions]);
 
   // Timer countdown
   useEffect(() => {
@@ -244,6 +248,8 @@ export default function InterviewSession() {
       const response = await codeApi.execute({
         sourceCode: currentAnswer.code,
         languageId: langId,
+        sessionId,
+        questionId: currentQuestion.id,
         stdin: currentQuestion?.testCases?.[0]?.input || '',
       });
 
@@ -254,8 +260,10 @@ export default function InterviewSession() {
           status: response.data.data.status?.description || 'Unknown',
           time: response.data.data.time || '0',
           memory: response.data.data.memory || 0,
-          testCasesPassed: 0,
-          totalTestCases: 0,
+          testCasesPassed: response.data.data.testCasesPassed || 0,
+          totalTestCases: response.data.data.totalTestCases || 0,
+          input: response.data.data.input || '',
+          expectedOutput: response.data.data.expectedOutput || '',
         });
       }
     } catch (err: any) {
@@ -294,6 +302,9 @@ export default function InterviewSession() {
         const data = response.data.data;
         setAiEvaluation(data.aiEvaluation);
         setFollowUpQuestions(data.followUpQuestions || []);
+        if (data.executionResult) {
+          setExecutionResult(data.executionResult);
+        }
 
         toast.success(`Answer submitted! Score: ${data.aiEvaluation?.score || 0}/10`);
 
@@ -319,7 +330,11 @@ export default function InterviewSession() {
       setExecutionResult(null);
       setAiEvaluation(null);
       setFollowUpQuestions([]);
-      setActiveTab('code');
+      if (questions[currentQuestionIndex + 1]?.topic.toLowerCase().includes('dsa')) {
+        setActiveTab('code');
+      } else {
+        setActiveTab('text');
+      }
     }
   };
 
@@ -331,6 +346,15 @@ export default function InterviewSession() {
       setExecutionResult(null);
       setAiEvaluation(null);
       setFollowUpQuestions([]);
+    }
+  };
+
+  // Reset code to boilerplate
+  const handleResetCode = () => {
+    if (!currentQuestion) return;
+    if (confirm('Are you sure you want to reset your code? This will delete all your current changes for this question.')) {
+      updateAnswer(currentQuestion.id, { code: BOILERPLATES[selectedLanguage] || '', language: selectedLanguage });
+      toast.success('Code reset to boilerplate');
     }
   };
 
@@ -540,18 +564,6 @@ export default function InterviewSession() {
         {/* Question Panel */}
         <aside className={styles.questionPanel} role="complementary" aria-label="Question">
           
-          {/* Ongoing Video Preview */}
-          {stream && (
-            <div style={{ marginBottom: '1rem', width: '100%', borderRadius: 'var(--radius-sm)', overflow: 'hidden', border: '1px solid var(--border-color)', background: '#000' }}>
-               <video 
-                 autoPlay 
-                 muted 
-                 playsInline 
-                 ref={(video) => { if (video) video.srcObject = stream; }}
-                 style={{ width: '100%', display: 'block' }} 
-               />
-            </div>
-          )}
 
           {/* Question Navigation */}
           <div className={styles.questionNav}>
@@ -592,7 +604,7 @@ export default function InterviewSession() {
               {currentQuestion.testCases && currentQuestion.testCases.length > 0 && (
                 <div className={styles.testCases}>
                   <h4 className="heading-sm">Test Cases</h4>
-                  {currentQuestion.testCases.map((tc, i) => (
+                  {currentQuestion.testCases.slice(0, 3).map((tc, i) => (
                     <div key={i} className={styles.testCase}>
                       <div>
                         <span className="text-xs text-muted">Input:</span>
@@ -604,6 +616,11 @@ export default function InterviewSession() {
                       </div>
                     </div>
                   ))}
+                  {currentQuestion.testCases.length > 3 && (
+                    <p className="text-xs text-muted" style={{ marginTop: '0.5rem', fontStyle: 'italic' }}>
+                      + {currentQuestion.testCases.length - 3} more hidden test cases
+                    </p>
+                  )}
                 </div>
               )}
 
@@ -663,14 +680,16 @@ export default function InterviewSession() {
         <div className={styles.editorPanel}>
           {/* Editor Tabs */}
           <div className={styles.editorTabs} role="tablist">
-            <button
-              role="tab"
-              aria-selected={activeTab === 'code'}
-              className={`${styles.editorTab} ${activeTab === 'code' ? styles.editorTabActive : ''}`}
-              onClick={() => setActiveTab('code')}
-            >
-              💻 Code
-            </button>
+            {currentQuestion.topic.toLowerCase().includes('dsa') && (
+              <button
+                role="tab"
+                aria-selected={activeTab === 'code'}
+                className={`${styles.editorTab} ${activeTab === 'code' ? styles.editorTabActive : ''}`}
+                onClick={() => setActiveTab('code')}
+              >
+                💻 Code
+              </button>
+            )}
             <button
               role="tab"
               aria-selected={activeTab === 'text'}
@@ -680,32 +699,42 @@ export default function InterviewSession() {
               📝 Text Answer
             </button>
 
-            {/* Language selector */}
+            {/* Language and Reset */}
             {activeTab === 'code' && (
-              <select
-                className="select"
-                value={selectedLanguage}
-                onChange={(e) => setSelectedLanguage(e.target.value)}
-                style={{ marginLeft: 'auto', width: 'auto', minWidth: '140px' }}
-                aria-label="Select programming language"
-              >
-                {Object.entries(LANGUAGE_MAP).map(([key, lang]) => (
-                  <option key={key} value={key}>
-                    {lang.name}
-                  </option>
-                ))}
-              </select>
+              <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                <button
+                  className="btn btn-secondary btn-sm"
+                  onClick={handleResetCode}
+                  title="Reset code to boilerplate"
+                  style={{ padding: '0.5rem', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+                >
+                  🔄
+                </button>
+                <select
+                  className="select"
+                  value={selectedLanguage}
+                  onChange={(e) => setSelectedLanguage(e.target.value)}
+                  style={{ width: 'auto', minWidth: '140px' }}
+                  aria-label="Select programming language"
+                >
+                  {Object.entries(LANGUAGE_MAP).map(([key, lang]) => (
+                    <option key={key} value={key}>
+                      {lang.name}
+                    </option>
+                  ))}
+                </select>
+              </div>
             )}
           </div>
 
           {/* Code Editor */}
-          {activeTab === 'code' ? (
+          {activeTab === 'code' && currentQuestion.topic.toLowerCase().includes('dsa') ? (
             <div className={styles.monacoContainer}>
               <MonacoEditor
                 height="100%"
                 language={LANGUAGE_MAP[selectedLanguage]?.monacoId || 'javascript'}
                 theme="vs-dark"
-                value={currentAnswer?.code || currentQuestion?.sampleCode || '// Write your solution here\n'}
+                value={currentAnswer?.code || currentQuestion?.sampleCode || BOILERPLATES[selectedLanguage] || '// Write your solution here\n'}
                 onChange={(value) => {
                   if (currentQuestion) {
                     updateAnswer(currentQuestion.id, { code: value || '', language: selectedLanguage });
@@ -795,21 +824,50 @@ export default function InterviewSession() {
                   <div className={`${styles.statusBadge} ${executionResult.status === 'Accepted' ? styles.statusSuccess : styles.statusError}`}>
                     {executionResult.status}
                   </div>
-                  {executionResult.stdout && (
-                    <div>
-                      <span className="text-xs text-muted">stdout:</span>
-                      <pre className={styles.outputPre}>{executionResult.stdout}</pre>
-                    </div>
+                  {executionResult.totalTestCases > 0 && (
+                     <div style={{ fontSize: '0.85rem', fontWeight: 600, marginTop: '0.25rem', color: executionResult.testCasesPassed === executionResult.totalTestCases ? 'var(--success)' : 'var(--warning)' }}>
+                        {executionResult.testCasesPassed === executionResult.totalTestCases ? '✅ All' : '❌'} {executionResult.testCasesPassed}/{executionResult.totalTestCases} Test Cases Passed
+                     </div>
                   )}
+
+                  <div style={{ marginTop: '1rem', display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
+                    {executionResult.input && (
+                      <div>
+                        <span className="text-xs text-muted" style={{ fontWeight: 600, textTransform: 'uppercase' }}>Input:</span>
+                        <pre className={styles.outputPre} style={{ marginTop: '0.25rem', background: 'rgba(255,255,255,0.03)' }}>{executionResult.input}</pre>
+                      </div>
+                    )}
+                    
+                    {executionResult.expectedOutput && (
+                      <div>
+                        <span className="text-xs text-muted" style={{ fontWeight: 600, textTransform: 'uppercase' }}>Expected Output:</span>
+                        <pre className={styles.outputPre} style={{ marginTop: '0.25rem', color: 'var(--success)', background: 'rgba(34, 197, 94, 0.05)' }}>{executionResult.expectedOutput}</pre>
+                      </div>
+                    )}
+
+                    {executionResult.status !== 'Unknown' && (
+                      <div>
+                        <span className="text-xs text-muted" style={{ fontWeight: 600, textTransform: 'uppercase' }}>Your Output:</span>
+                        <pre className={styles.outputPre} style={{ 
+                          marginTop: '0.25rem', 
+                          background: executionResult.status === 'Accepted' ? 'rgba(34, 197, 94, 0.05)' : 'rgba(239, 68, 68, 0.05)',
+                          color: executionResult.status === 'Accepted' ? 'var(--success)' : 'var(--error)'
+                        }}>{executionResult.status === 'Runtime Error' ? 'Execution failed' : (executionResult.stdout || '[]')}</pre>
+                      </div>
+                    )}
+                  </div>
+
                   {executionResult.stderr && (
-                    <div>
-                      <span className="text-xs text-muted" style={{ color: 'var(--error)' }}>stderr:</span>
-                      <pre className={styles.outputPre} style={{ color: 'var(--error)' }}>{executionResult.stderr}</pre>
+                    <div style={{ marginTop: '1rem' }}>
+                      <span className="text-xs text-muted" style={{ color: 'var(--error)', fontWeight: 600 }}>RUNTIME ERROR / STDERR:</span>
+                      <pre className={styles.outputPre} style={{ color: 'var(--error)', marginTop: '0.25rem', background: 'rgba(239, 68, 68, 0.05)' }}>{executionResult.stderr}</pre>
                     </div>
                   )}
-                  <div className={styles.execMeta}>
-                    <span>Time: {executionResult.time}s</span>
-                    <span>Memory: {(executionResult.memory / 1024).toFixed(1)} KB</span>
+
+                  <div className={styles.execMeta} style={{ marginTop: '1.5rem', paddingTop: '0.75rem', borderTop: '1px solid var(--border-secondary)' }}>
+                    <span>⚡ Run Time: {executionResult.time}s</span>
+                    <span>💾 Memory: {(executionResult.memory / 1024).toFixed(1)} KB</span>
+                    <span>📊 Status: {executionResult.status}</span>
                   </div>
                 </div>
               ) : (
@@ -831,6 +889,28 @@ export default function InterviewSession() {
           />
         </div>
       </div>
+
+      {/* Floating AI Camera View */}
+      {stream && isStarted && !isCompleted && (
+        <DraggableVideo 
+          stream={stream} 
+          onFaceDetectChange={(detected) => {
+             setPersonDetected(detected);
+             if (!detected) {
+                proctoringApi.logFlag({ sessionId, type: 'no_face', severity: 'medium', details: 'Candidate not detected in frame' });
+                socketRef.current.emit('proctoring-event', { sessionId, type: 'no_face', severity: 'medium' });
+             }
+          }}
+          onDeviceDetectChange={(detected) => {
+             setDeviceDetected(detected);
+             if (detected) {
+                proctoringApi.logFlag({ sessionId, type: 'suspicious_activity', severity: 'high', details: 'Mobile/Electronic device detected' });
+                socketRef.current.emit('proctoring-event', { sessionId, type: 'suspicious_activity', severity: 'high' });
+                toast.error('🚨 Suspicious device detected!', { duration: 5000 });
+             }
+          }}
+        />
+      )}
     </div>
   );
 }
