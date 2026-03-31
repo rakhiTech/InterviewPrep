@@ -74,86 +74,11 @@ class Judge0Service {
       
       let finalSrc = params.sourceCode;
       
+      // For JavaScript, append a wrapper that auto-invokes the candidate's function
       if (language === 'javascript' && params.stdin) {
-         finalSrc += `
-// --- Auto-Execution Wrapper ---
-const fs = require('fs');
-
-class ListNode {
-    constructor(val = 0, next = null) {
-        this.val = val;
-        this.next = next;
-    }
-}
-
-function __arrayToList(arr) {
-    if (!Array.isArray(arr) || !arr.length) return null;
-    let head = new ListNode(arr[0]);
-    let curr = head;
-    for (let i = 1; i < arr.length; i++) {
-        curr.next = new ListNode(arr[i]);
-        curr = curr.next;
-    }
-    return head;
-}
-
-function __listToArray(node) {
-    if (node === null) return [];
-    let res = [];
-    while (node && typeof node === 'object' && 'val' in node) {
-        res.push(node.val);
-        node = node.next;
-    }
-    return res;
-}
-
-try {
-    const __stdin = fs.readFileSync(0, 'utf-8').trim();
-    if (__stdin) {
-        let __parsedArgs = [];
-        let __isLinkedList = false;
-        
-        const __content = fs.readFileSync(__filename, 'utf8');
-        const __funcMatch = __content.match(/(?:function\\s+|const\\s+|var\\s+|let\\s+)([a-zA-Z0-9_]+)\\s*(?:=|\\s*\\()/);
-        const __funcName = __funcMatch ? (__funcMatch[1] === 'function' ? null : __funcMatch[1]) : null;
-
-        if (__funcName) {
-            if (__funcName.toLowerCase().includes('list') || __content.toLowerCase().includes('listnode') || __content.toLowerCase().includes('linked')) __isLinkedList = true;
-
-            if (__stdin.includes('=')) {
-                // Parse named variables format: "nums=[2,7], target=9"
-                const __pairs = __stdin.split(/,(?![^\\[]*\\])/);
-                __pairs.forEach(p => {
-                    const parts = p.split('=');
-                    if (parts.length >= 2) {
-                        try { __parsedArgs.push(JSON.parse(parts.slice(1).join('=').trim())); } catch(e){}
-                    }
-                });
-            } else {
-                // Parse flat json structure: "[1,2,3,4,5]"
-                try { 
-                    let __val = JSON.parse(__stdin); 
-                    if (__isLinkedList && Array.isArray(__val)) {
-                        __val = __arrayToList(__val);
-                    }
-                    __parsedArgs.push(__val);
-                } catch(e) { __parsedArgs.push(__stdin); }
-            }
-            
-            // Auto invoke the target function with the parsed args
-            let __result = eval(__funcName + ".apply(null, __parsedArgs)");
-            
-            if (__isLinkedList && (__result === null || (typeof __result === 'object' && 'val' in __result))) {
-                console.log(JSON.stringify(__listToArray(__result)).replace(/\\s/g, ''));
-            } else if (__result !== undefined) {
-                console.log(JSON.stringify(__result).replace(/\\s/g, ''));
-            }
-        }
-    }
-} catch(e) {
-    console.error("Execution error:", e.message);
-}
-`;
+        const wrapperPath = path.join(__dirname, 'js-wrapper.js');
+        const wrapperCode = await fs.readFile(wrapperPath, 'utf8');
+        finalSrc += '\n' + wrapperCode;
       }
       
       
@@ -183,8 +108,8 @@ try {
 
           // If we got an expected output to compare against
           if (params.expectedOutput && !isError) {
-             const cleanStdout = (stdout || '').trim().replace(/\\s/g, '');
-             const cleanExpected = (params.expectedOutput || '').trim().replace(/\\s/g, '');
+             const cleanStdout = (stdout || '').trim().replace(/\s/g, '');
+             const cleanExpected = (params.expectedOutput || '').trim().replace(/\s/g, '');
              if (cleanStdout !== cleanExpected) {
                 statusId = 4;
                 statusDesc = 'Wrong Answer';
