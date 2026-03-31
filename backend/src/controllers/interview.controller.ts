@@ -637,7 +637,7 @@ export const executeCode = async (req: Request, res: Response) => {
           const interview = await Interview.findOne({ interviewId: session.interviewId });
           const question = interview?.questions.find(q => q.id === questionId);
           
-          if (question && question.testCases && question.testCases.length > 0) {
+           if (question && question.testCases && question.testCases.length > 0) {
              const testResults = await judge0Service.runTestCases({
                sourceCode,
                languageId,
@@ -647,26 +647,49 @@ export const executeCode = async (req: Request, res: Response) => {
                })),
              });
 
-             // Find the first failed test case or use the first one
-             const firstFailedIdx = testResults.results.findIndex(r => r.status.id !== 3);
+             // Build per-test-case results
+             const testCaseResults = question.testCases.map((tc, idx) => {
+               const result = testResults.results[idx];
+               const actualOutput = (result?.stdout || '').trim();
+               const passed = result?.status?.id === 3;
+               return {
+                 input: tc.input,
+                 expectedOutput: tc.expectedOutput,
+                 actualOutput: actualOutput,
+                 passed,
+                 isHidden: tc.isHidden || false,
+               };
+             });
+
+             // Find the first failed test case for the summary
+             const firstFailedIdx = testCaseResults.findIndex(r => !r.passed);
              const reportIdx = firstFailedIdx >= 0 ? firstFailedIdx : 0;
-             const reportCase = question.testCases[reportIdx];
              const reportResult = testResults.results[reportIdx];
+
+             // Determine overall status
+             const allPassed = testResults.passed === testResults.total;
+             let status = 'Accepted';
+             if (!allPassed) {
+               status = reportResult?.status?.description || 'Wrong Answer';
+               if (status === 'Accepted') status = 'Wrong Answer'; // edge case: individual says accepted but output mismatch
+             }
              
              return res.json({
                success: true,
                data: {
                  stdout: reportResult?.stdout || '',
                  stderr: reportResult?.stderr || '',
-                 status: testResults.passed === testResults.total ? 'Accepted' : (reportResult?.status?.description || 'Unknown'),
+                 status,
                  time: reportResult?.time || '0',
                  memory: reportResult?.memory || 0,
                  testCasesPassed: testResults.passed,
                  totalTestCases: testResults.total,
-                 input: reportCase?.input || '',
-                 expectedOutput: reportCase?.expectedOutput || '',
+                 input: question.testCases[reportIdx]?.input || '',
+                 expectedOutput: question.testCases[reportIdx]?.expectedOutput || '',
+                 testCaseResults,
                }
              });
+
           }
        }
     }

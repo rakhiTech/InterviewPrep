@@ -54,6 +54,14 @@ export interface Interview {
 // Session Types
 // ═══════════════════════════════════════
 
+export interface TestCaseResult {
+  input: string;
+  expectedOutput: string;
+  actualOutput: string;
+  passed: boolean;
+  isHidden: boolean;
+}
+
 export interface ExecutionResult {
   stdout: string;
   stderr: string;
@@ -64,7 +72,9 @@ export interface ExecutionResult {
   totalTestCases: number;
   input?: string;
   expectedOutput?: string;
+  testCaseResults?: TestCaseResult[];
 }
+
 
 export interface AIEvaluation {
   score: number;

@@ -48,6 +48,7 @@ export default function InterviewSession() {
   const [isRunning, setIsRunning] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [executionResult, setExecutionResult] = useState<ExecutionResult | null>(null);
+  const [selectedTestTab, setSelectedTestTab] = useState(0);
   const [aiEvaluation, setAiEvaluation] = useState<AIEvaluation | null>(null);
   const [followUpQuestions, setFollowUpQuestions] = useState<string[]>([]);
   const [tabSwitchCount, setTabSwitchCount] = useState(0);
@@ -242,6 +243,7 @@ export default function InterviewSession() {
 
     setIsRunning(true);
     setExecutionResult(null);
+    setSelectedTestTab(0);
 
     try {
       const langId = LANGUAGE_MAP[selectedLanguage]?.id || 63;
@@ -257,13 +259,14 @@ export default function InterviewSession() {
         setExecutionResult({
           stdout: response.data.data.stdout || '',
           stderr: response.data.data.stderr || response.data.data.compile_output || '',
-          status: response.data.data.status?.description || 'Unknown',
+          status: response.data.data.status || 'Unknown',
           time: response.data.data.time || '0',
           memory: response.data.data.memory || 0,
           testCasesPassed: response.data.data.testCasesPassed || 0,
           totalTestCases: response.data.data.totalTestCases || 0,
           input: response.data.data.input || '',
           expectedOutput: response.data.data.expectedOutput || '',
+          testCaseResults: response.data.data.testCaseResults || [],
         });
       }
     } catch (err: any) {
@@ -821,42 +824,113 @@ export default function InterviewSession() {
             <div className={styles.outputContent}>
               {executionResult ? (
                 <div className={styles.outputResult}>
-                  <div className={`${styles.statusBadge} ${executionResult.status === 'Accepted' ? styles.statusSuccess : styles.statusError}`}>
-                    {executionResult.status}
-                  </div>
-                  {executionResult.totalTestCases > 0 && (
-                     <div style={{ fontSize: '0.85rem', fontWeight: 600, marginTop: '0.25rem', color: executionResult.testCasesPassed === executionResult.totalTestCases ? 'var(--success)' : 'var(--warning)' }}>
-                        {executionResult.testCasesPassed === executionResult.totalTestCases ? '✅ All' : '❌'} {executionResult.testCasesPassed}/{executionResult.totalTestCases} Test Cases Passed
-                     </div>
-                  )}
-
-                  <div style={{ marginTop: '1rem', display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
-                    {executionResult.input && (
-                      <div>
-                        <span className="text-xs text-muted" style={{ fontWeight: 600, textTransform: 'uppercase' }}>Input:</span>
-                        <pre className={styles.outputPre} style={{ marginTop: '0.25rem', background: 'rgba(255,255,255,0.03)' }}>{executionResult.input}</pre>
-                      </div>
-                    )}
-                    
-                    {executionResult.expectedOutput && (
-                      <div>
-                        <span className="text-xs text-muted" style={{ fontWeight: 600, textTransform: 'uppercase' }}>Expected Output:</span>
-                        <pre className={styles.outputPre} style={{ marginTop: '0.25rem', color: 'var(--success)', background: 'rgba(34, 197, 94, 0.05)' }}>{executionResult.expectedOutput}</pre>
-                      </div>
-                    )}
-
-                    {executionResult.status !== 'Unknown' && (
-                      <div>
-                        <span className="text-xs text-muted" style={{ fontWeight: 600, textTransform: 'uppercase' }}>Your Output:</span>
-                        <pre className={styles.outputPre} style={{ 
-                          marginTop: '0.25rem', 
-                          background: executionResult.status === 'Accepted' ? 'rgba(34, 197, 94, 0.05)' : 'rgba(239, 68, 68, 0.05)',
-                          color: executionResult.status === 'Accepted' ? 'var(--success)' : 'var(--error)'
-                        }}>{executionResult.status === 'Runtime Error' ? 'Execution failed' : (executionResult.stdout || '[]')}</pre>
-                      </div>
+                  {/* Status Badge */}
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '1rem', flexWrap: 'wrap' }}>
+                    <div className={`${styles.statusBadge} ${executionResult.status === 'Accepted' ? styles.statusSuccess : styles.statusError}`}>
+                      {executionResult.status}
+                    </div>
+                    {executionResult.totalTestCases > 0 && (
+                      <span style={{ fontSize: '0.85rem', fontWeight: 600, color: executionResult.testCasesPassed === executionResult.totalTestCases ? 'var(--success)' : 'var(--warning)' }}>
+                        {executionResult.testCasesPassed === executionResult.totalTestCases ? '✅' : '❌'} {executionResult.testCasesPassed}/{executionResult.totalTestCases} Test Cases Passed
+                        {executionResult.testCasesPassed < executionResult.totalTestCases && (
+                          <span style={{ color: 'var(--error)', marginLeft: '0.5rem', fontSize: '0.8rem' }}>
+                            ({executionResult.totalTestCases - executionResult.testCasesPassed} remaining)
+                          </span>
+                        )}
+                      </span>
                     )}
                   </div>
 
+                  {/* Test Case Tabs - LeetCode Style */}
+                  {executionResult.testCaseResults && executionResult.testCaseResults.length > 0 && (() => {
+                    const visibleCases = executionResult.testCaseResults.filter(tc => !tc.isHidden);
+                    const hiddenCases = executionResult.testCaseResults.filter(tc => tc.isHidden);
+                    const hiddenPassed = hiddenCases.filter(tc => tc.passed).length;
+                    const currentCase = visibleCases[selectedTestTab] || visibleCases[0];
+
+                    return (
+                      <div style={{ marginTop: '1rem' }}>
+                        {/* Tab buttons */}
+                        <div style={{ display: 'flex', gap: '4px', borderBottom: '2px solid var(--border-secondary)', paddingBottom: '0' }}>
+                          {visibleCases.map((tc, idx) => (
+                            <button
+                              key={idx}
+                              onClick={() => setSelectedTestTab(idx)}
+                              style={{
+                                padding: '6px 16px',
+                                border: 'none',
+                                borderBottom: selectedTestTab === idx ? '2px solid var(--primary)' : '2px solid transparent',
+                                background: selectedTestTab === idx ? 'rgba(99, 102, 241, 0.1)' : 'transparent',
+                                color: selectedTestTab === idx ? 'var(--primary)' : 'var(--text-secondary)',
+                                cursor: 'pointer',
+                                fontSize: '0.8rem',
+                                fontWeight: 600,
+                                borderRadius: '6px 6px 0 0',
+                                display: 'flex',
+                                alignItems: 'center',
+                                gap: '6px',
+                                transition: 'all 0.15s ease',
+                              }}
+                            >
+                              <span style={{
+                                width: '8px',
+                                height: '8px',
+                                borderRadius: '50%',
+                                background: tc.passed ? 'var(--success)' : 'var(--error)',
+                                display: 'inline-block',
+                              }} />
+                              Case {idx + 1}
+                            </button>
+                          ))}
+                        </div>
+
+                        {/* Selected test case details */}
+                        {currentCase && (
+                          <div style={{ padding: '1rem 0', display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
+                            <div>
+                              <span className="text-xs text-muted" style={{ fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.5px' }}>Input</span>
+                              <pre className={styles.outputPre} style={{ marginTop: '4px', background: 'rgba(255,255,255,0.03)', borderLeft: '3px solid var(--border-secondary)' }}>{currentCase.input}</pre>
+                            </div>
+                            <div>
+                              <span className="text-xs text-muted" style={{ fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.5px' }}>Expected Output</span>
+                              <pre className={styles.outputPre} style={{ marginTop: '4px', color: 'var(--success)', background: 'rgba(34, 197, 94, 0.05)', borderLeft: '3px solid var(--success)' }}>{currentCase.expectedOutput}</pre>
+                            </div>
+                            <div>
+                              <span className="text-xs text-muted" style={{ fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.5px' }}>Your Output</span>
+                              <pre className={styles.outputPre} style={{
+                                marginTop: '4px',
+                                background: currentCase.passed ? 'rgba(34, 197, 94, 0.05)' : 'rgba(239, 68, 68, 0.05)',
+                                color: currentCase.passed ? 'var(--success)' : 'var(--error)',
+                                borderLeft: `3px solid ${currentCase.passed ? 'var(--success)' : 'var(--error)'}`,
+                              }}>{currentCase.actualOutput || '(no output)'}</pre>
+                            </div>
+                          </div>
+                        )}
+
+                        {/* Hidden test cases summary */}
+                        {hiddenCases.length > 0 && (
+                          <div style={{
+                            marginTop: '0.5rem',
+                            padding: '8px 12px',
+                            background: 'rgba(99, 102, 241, 0.06)',
+                            borderRadius: '6px',
+                            fontSize: '0.8rem',
+                            color: 'var(--text-secondary)',
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: '6px',
+                          }}>
+                            🔒 {hiddenCases.length} hidden test case{hiddenCases.length > 1 ? 's' : ''}
+                            <span style={{ color: hiddenPassed === hiddenCases.length ? 'var(--success)' : 'var(--error)', fontWeight: 600 }}>
+                              — {hiddenPassed}/{hiddenCases.length} passed
+                            </span>
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })()}
+
+                  {/* Stderr / Runtime errors */}
                   {executionResult.stderr && (
                     <div style={{ marginTop: '1rem' }}>
                       <span className="text-xs text-muted" style={{ color: 'var(--error)', fontWeight: 600 }}>RUNTIME ERROR / STDERR:</span>
@@ -864,6 +938,7 @@ export default function InterviewSession() {
                     </div>
                   )}
 
+                  {/* Execution metadata */}
                   <div className={styles.execMeta} style={{ marginTop: '1.5rem', paddingTop: '0.75rem', borderTop: '1px solid var(--border-secondary)' }}>
                     <span>⚡ Run Time: {executionResult.time}s</span>
                     <span>💾 Memory: {(executionResult.memory / 1024).toFixed(1)} KB</span>
